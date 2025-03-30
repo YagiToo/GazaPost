@@ -1,4 +1,4 @@
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { NewsArticle } from '../types/NewsArticle';
 
 interface RSSFeedItem {
@@ -43,9 +43,23 @@ const extractArticles = (items: RSSFeedItem[], source: string): NewsArticle[] =>
   }));
 };
 
-export const fetchNews = async (): Promise<NewsArticle[]> => {
-  const newsData: NewsArticle[] = [];
+const fetchNewsFromSource = async (url: string, source: string): Promise<NewsArticle[]> => {
+  try {
+    const { rss: { channel: { item } } } = await parseRSS(url);
+    return extractArticles(item, source);
+  } catch (error) {
+    console.error(`Error fetching news from ${source}:`, error);
+    return [];
+  }
+};
 
+const fetchAllNews = async (sources: { url: string; source: string }[]): Promise<NewsArticle[]> => {
+  const newsPromises = sources.map(({ url, source }) => fetchNewsFromSource(url, source));
+  const newsResults = await Promise.all(newsPromises);
+  return newsResults.flat();
+};
+
+export const fetchNews = async (): Promise<NewsArticle[]> => {
   const sources = [
     {
       url: 'https://api.allorigins.win/raw?url=https://www.reuters.com/news/rss',
@@ -249,15 +263,7 @@ export const fetchNews = async (): Promise<NewsArticle[]> => {
     }
   ];
 
-  for (const { url, source } of sources) {
-    try {
-      const { rss: { channel: { item } } } = await parseRSS(url);
-      const articles = extractArticles(item, source);
-      newsData.push(...articles);
-    } catch (error) {
-      console.error(`Error fetching news from ${source}:`, error);
-    }
-  }
+  const newsData = await fetchAllNews(sources);
 
   const twoDaysAgo = new Date();
   twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
